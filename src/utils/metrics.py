@@ -1,5 +1,6 @@
 import transformers
 import torch
+from torch.utils.data import DataLoader
 import time
 from tqdm import tqdm
 
@@ -40,16 +41,17 @@ def time_to_first_token(model:transformers.models,
 
 '''
 def calculate_perplexity(model:transformers.models,
-                        example,):
+                        example,
+                        stride = 16):
   #max_length = model.config.n_positions
   max_length = 1024
-  stride = 32
+  stride = stride
   seq_len = example.input_ids.size(1)
 
   nll_sum = 0.0
   n_tokens = 0
   prev_end_loc = 0
-  for begin_loc in tqdm(range(0, seq_len, stride)):
+  for begin_loc in tqdm(range(0, seq_len, stride),leave=False):
       end_loc = min(begin_loc + max_length, seq_len)
       trg_len = end_loc - prev_end_loc  # may be different from stride on last loop
       input_ids = example.input_ids[:, begin_loc:end_loc].to("cuda")
@@ -77,4 +79,27 @@ def calculate_perplexity(model:transformers.models,
 
   avg_nll = nll_sum / n_tokens  # average negative log-likelihood per token
   ppl = torch.exp(avg_nll)
-  return ppl
+  return ppl.item()
+
+
+def get_metrics(model: transformers.models,
+                  dataloader: DataLoader):
+  mem = calculate_memory_footprint(model)
+  ttft = []
+  tps = []
+  ppl = []
+  model = model.to("cuda")
+  for batch in dataloader:
+    batch = batch.to("cuda")
+    ttft.append(time_to_first_token(model,batch))
+    tps.append(tokens_per_second(model,batch,100))
+    ppl.append(calculate_perplexity(model,batch))
+  return mem, sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
+
+
+    
+
+  
+
+  
+

@@ -13,7 +13,7 @@ class Qwen3():
     def __init__(self):
         self.processor = None
         self.model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B-Base")
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B-Base")
+        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B-Base",padding_side='left')
 
 ''' 
  
@@ -35,17 +35,29 @@ class LFM2():
 '''
 
 '''
-class IBM_Granite():
+class IBM_Granite1b():
     def __init__(self):
         self.processor = None
         self.model = AutoModelForCausalLM.from_pretrained("ibm-granite/granite-4.0-h-1b")
         self.tokenizer = AutoTokenizer.from_pretrained("ibm-granite/granite-4.0-h-1b")
+
+'''
+
+'''
+class IBM_Granite():
+    def __init__(self):
+        self.processor = None
+        self.model = AutoModelForCausalLM.from_pretrained("ibm-granite/granite-4.0-h-350m-base")
+        self.tokenizer = AutoTokenizer.from_pretrained("ibm-granite/granite-4.0-h-350m-base")
+
+
+
 '''
 DO NOT USE!!
 '''
-class RWKV7():
-    def __init__(self):
-        self.processor = None
-        self.model = AutoModelForCausalLM.from_pretrained('fla-hub/rwkv7-0.4B-world', trust_remote_code=True)
-        self.tokenizer = AutoTokenizer.from_pretrained('fla-hub/rwkv7-0.4B-world', trust_remote_code=True)
+# class RWKV7():
+#     def __init__(self):
+#         self.processor = None
+#         self.model = AutoModelForCausalLM.from_pretrained('fla-hub/rwkv7-0.4B-world', trust_remote_code=True)
+#         self.tokenizer = AutoTokenizer.from_pretrained('fla-hub/rwkv7-0.4B-world', trust_remote_code=True)
         
