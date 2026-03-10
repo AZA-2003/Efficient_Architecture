@@ -1,9 +1,9 @@
 from transformers import AutoProcessor, AutoModelForImageTextToText, \
     AutoTokenizer, AutoModel, AutoModelForCausalLM
 import torch
+
 '''
 This ONLY works in REMOTE SERVERS (datahub, colab, etc)
-
 '''
 
 '''
@@ -22,8 +22,9 @@ class Qwen35():
     def __init__(self): 
         self.processor = AutoProcessor.from_pretrained("Qwen/Qwen3.5-0.8B-Base")
         self.model = AutoModelForImageTextToText.from_pretrained("Qwen/Qwen3.5-0.8B-Base") 
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3.5-0.8B-Base")
+        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3.5-0.8B-Base",padding_side='left')
 '''
+
 '''
 class LFM2():
     def __init__(self):
@@ -31,17 +32,16 @@ class LFM2():
         self.model = AutoModelForCausalLM.from_pretrained("LiquidAI/LFM2-700M")
         self.tokenizer = AutoTokenizer.from_pretrained("LiquidAI/LFM2-700M")
 
-
 '''
 
 '''
 class IBM_Granite():
     def __init__(self):
         self.processor = None
-        self.model = AutoModelForCausalLM.from_pretrained("ibm-granite/granite-4.0-micro")
-        self.tokenizer = AutoTokenizer.from_pretrained("ibm-granite/granite-4.0-micro")
+        self.model = AutoModelForCausalLM.from_pretrained("ibm-granite/granite-4.0-h-1b")
+        self.tokenizer = AutoTokenizer.from_pretrained("ibm-granite/granite-4.0-h-1b")
 '''
-
+DO NOT USE!!
 '''
 class RWKV7():
     def __init__(self):
