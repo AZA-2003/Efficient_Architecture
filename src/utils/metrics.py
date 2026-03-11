@@ -95,8 +95,8 @@ def get_metrics(model: transformers.models,
   for batch in dataloader:
     batch = batch.to("cuda")
     ttft.append(time_to_first_token(model,batch))
-    tps.append(tokens_per_second(model,batch,max_length = read_length+gen_length, stride=read_length))
-    ppl.append(calculate_perplexity(model,batch))
+    tps.append(tokens_per_second(model,batch,))
+    ppl.append(calculate_perplexity(model,batch,max_length = read_length+gen_length, stride=read_length))
   return sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
 
 
