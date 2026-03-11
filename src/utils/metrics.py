@@ -1,6 +1,7 @@
 import transformers
 import torch
 from torch.utils.data import DataLoader
+from torch.profiler import profile, record_function, ProfilerActivity
 import time
 from tqdm import tqdm
 
@@ -95,10 +96,21 @@ def get_metrics(model: transformers.models,
   for batch in dataloader:
     batch = batch.to("cuda")
     ttft.append(time_to_first_token(model,batch))
-    tps.append(tokens_per_second(model,batch,))
+    tps.append(tokens_per_second(model,batch,gen_length))
     ppl.append(calculate_perplexity(model,batch,max_length = read_length+gen_length, stride=read_length))
   return sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
 
+def model_profiler(model: transformers.models,
+                  example):
+  with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+    model = model.to("cuda")
+    example = example.to("cuda")
+    model(**example)
+  
+  prof.export_chrome_trace("trace.json")
+  return prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=-1)
+
+  
 
     
 
