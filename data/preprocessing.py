@@ -26,7 +26,7 @@ class c4_dataset():
                             tokenizer:AutoTokenizer = self.tokenizer,
                             sequence_length = sequence_length):
             
-            return tokenizer(example['text'][:sequence_length],truncation=True)
+            return tokenizer(example['text'],truncation=True,max_length=sequence_length)
     
         c4 = Dataset.from_list(list(self.c4.take(num_examples)))
         c4 = c4.remove_columns(["timestamp","url"])
