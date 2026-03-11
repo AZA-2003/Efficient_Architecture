@@ -83,6 +83,13 @@ def calculate_perplexity(model:transformers.models,
   ppl = torch.exp(avg_nll)
   return ppl.item()
 
+def peak_memory(model:transformers.models,
+                example,):
+  torch.cuda.memory.reset_peak_memory_stats()
+  model(**example)
+  peak_mem = torch.cuda.memory.max_memory_allocated()
+  torch.cuda.memory.reset_peak_memory_stats()
+  return round(peak_mem/(1024**3),3)
 
 def get_metrics(model: transformers.models,
                   dataloader: DataLoader,
@@ -92,13 +99,17 @@ def get_metrics(model: transformers.models,
   ttft = []
   tps = []
   ppl = []
+  pm = []
   model = model.to("cuda")
-  for batch in dataloader:
-    batch = batch.to("cuda")
-    ttft.append(time_to_first_token(model,batch))
-    tps.append(tokens_per_second(model,batch,gen_length))
-    ppl.append(calculate_perplexity(model,batch,max_length = read_length+gen_length, stride=read_length))
-  return sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
+  model.eval()
+  with torch.no_grad():
+    for batch in dataloader:
+      batch = batch.to("cuda")
+      pm.append(peak_memory(model,batch))
+      ttft.append(time_to_first_token(model,batch))
+      tps.append(tokens_per_second(model,batch,gen_length))
+      ppl.append(calculate_perplexity(model,batch,max_length = read_length+gen_length, stride=read_length))
+  return sum(pm)/len(pm), sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
 
 def model_profiler(model: transformers.models,
                   example):

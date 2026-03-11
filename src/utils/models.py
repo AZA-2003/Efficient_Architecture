@@ -38,8 +38,8 @@ class LFM2():
 class IBM_Granite1b():
     def __init__(self):
         self.processor = None
-        self.model = AutoModelForCausalLM.from_pretrained("ibm-granite/granite-4.0-h-1b")
-        self.tokenizer = AutoTokenizer.from_pretrained("ibm-granite/granite-4.0-h-1b")
+        self.model = AutoModelForCausalLM.from_pretrained("ibm-granite/granite-4.0-h-1b-base")
+        self.tokenizer = AutoTokenizer.from_pretrained("ibm-granite/granite-4.0-h-1b-base")
 
 '''
 
