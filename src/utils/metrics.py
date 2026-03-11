@@ -42,9 +42,10 @@ def time_to_first_token(model:transformers.models,
 '''
 def calculate_perplexity(model:transformers.models,
                         example,
+                        max_length = 1024,
                         stride = 16):
   #max_length = model.config.n_positions
-  max_length = 1024
+  max_length = max_length
   stride = stride
   seq_len = example.input_ids.size(1)
 
@@ -83,8 +84,10 @@ def calculate_perplexity(model:transformers.models,
 
 
 def get_metrics(model: transformers.models,
-                  dataloader: DataLoader):
-  mem = calculate_memory_footprint(model)
+                  dataloader: DataLoader,
+                  read_length: int,
+                  gen_length: int):
+  # mem = calculate_memory_footprint(model)
   ttft = []
   tps = []
   ppl = []
@@ -92,9 +95,9 @@ def get_metrics(model: transformers.models,
   for batch in dataloader:
     batch = batch.to("cuda")
     ttft.append(time_to_first_token(model,batch))
-    tps.append(tokens_per_second(model,batch,100))
+    tps.append(tokens_per_second(model,batch,max_length = read_length+gen_length, stride=read_length))
     ppl.append(calculate_perplexity(model,batch))
-  return mem, sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
+  return sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
 
 
     
