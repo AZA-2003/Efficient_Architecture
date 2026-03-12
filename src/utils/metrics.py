@@ -23,7 +23,7 @@ def tokens_per_second(model:transformers.models,
   outputs = model.generate(**example, 
                           max_new_tokens=num_tokens,
                           num_beams=4,
-                          do_sample=False,)
+                          do_sample=False,).cpu()
   time_elapsed = time.time() - start
   new_token_length = outputs.shape[1] - initial_length
   return new_token_length/time_elapsed
@@ -61,7 +61,7 @@ def calculate_perplexity(model:transformers.models,
       target_ids[:, :-trg_len] = -100
 
       with torch.no_grad():
-          outputs = model(input_ids, labels=target_ids)
+          outputs = model(input_ids, labels=target_ids).cpu()
 
           # loss is calculated using CrossEntropyLoss which averages over valid labels
           # N.B. the model only calculates loss over trg_len - 1 labels, because it internally shifts the labels
