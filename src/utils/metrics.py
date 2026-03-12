@@ -1,5 +1,6 @@
 import transformers
 import torch
+import gc
 from torch.utils.data import DataLoader
 from torch.profiler import profile, record_function, ProfilerActivity
 import time
@@ -9,8 +10,9 @@ from tqdm import tqdm
 
 '''
 def calculate_memory_footprint(model:transformers.models,):
-  total_params = sum(p.numel() for p in model.parameters())
-  return round((total_params*4)/(1024*1024*1024),3)
+  #total_params = sum(p.numel() for p in model.parameters())
+  total_param_bytes = model.get_memory_footprint()
+  return round((total_param_bytes)/(1024*1024*1024),3)
 
 '''
 
@@ -25,7 +27,8 @@ def tokens_per_second(model:transformers.models,
                           num_beams=4,
                           do_sample=False,).cpu()
   time_elapsed = time.time() - start
-  new_token_length = outputs.shape[1] - initial_length
+  new_token_length = outputs.shape[1]
+  del outputs
   return new_token_length/time_elapsed
 
 '''
@@ -61,12 +64,13 @@ def calculate_perplexity(model:transformers.models,
       target_ids[:, :-trg_len] = -100
 
       with torch.no_grad():
-          outputs = model(input_ids, labels=target_ids).cpu()
+          outputs = model(input_ids, labels=target_ids)
 
           # loss is calculated using CrossEntropyLoss which averages over valid labels
           # N.B. the model only calculates loss over trg_len - 1 labels, because it internally shifts the labels
           # to the left by 1.
           neg_log_likelihood = outputs.loss
+          del outputs
 
       # Accumulate the total negative log-likelihood and the total number of tokens
       num_valid_tokens = (target_ids != -100).sum().item()  # number of valid tokens in target_ids
@@ -100,15 +104,21 @@ def get_metrics(model: transformers.models,
   tps = []
   ppl = []
   pm = []
-  model = model.to("cuda")
   model.eval()
   with torch.no_grad():
     for batch in dataloader:
+      batch = batch.to(torch.bfloat16)
       batch = batch.to("cuda")
-      pm.append(peak_memory(model,batch))
+      #pm.append(peak_memory(model,batch))
       ttft.append(time_to_first_token(model,batch))
+      torch.cuda.memory.reset_peak_memory_stats()
       tps.append(tokens_per_second(model,batch,gen_length))
+      pm.append(round(torch.cuda.memory.max_memory_allocated()/(1024**3),3))
+      torch.cuda.memory.reset_peak_memory_stats()
       ppl.append(calculate_perplexity(model,batch,max_length = read_length+gen_length, stride=read_length))
+      del batch
+      torch.cuda.empty_cache()
+      gc.collect()
   return sum(pm)/len(pm), sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
 
 def model_profiler(model: transformers.models,
