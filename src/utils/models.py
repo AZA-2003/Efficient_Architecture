@@ -51,6 +51,11 @@ class IBM_Granite():
         self.tokenizer = AutoTokenizer.from_pretrained("ibm-granite/granite-4.0-h-350m-base")
 
 
+class GPT2():
+    def __init__(self):
+        self.processor = None
+        self.model = AutoModelForCausalLM.from_pretrained("openai-community/gpt2")
+        self.tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
 
 '''
 DO NOT USE!!

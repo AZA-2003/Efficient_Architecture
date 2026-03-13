@@ -35,10 +35,38 @@ class c4_dataset():
     
         return DataLoader(c4,shuffle=True,batch_size=batch_size,collate_fn=self.data_collator)
 
-def process_stack_dataset(split: str,
-                       language: str,
-                       num_examples: int,
-                       sequence_length: int,
-                       batch_size: int,
-                       tokenizer: AutoTokenizer,):
-    pass
+'''
+Longer context dataset
+'''
+class longmino_dataset():
+    def __init__(self,
+                tokenizer: AutoTokenizer,):
+        self.tokenizer = tokenizer
+        self.data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+        self.longmino = load_dataset("allenai/dolma3_longmino_mix-50B-1025",split="train",streaming=True) 
+        
+    def process(self,
+                num_examples: int,
+                sequence_length: int,
+                batch_size: int,):
+        
+        def tokenizer_func(example,
+                            tokenizer:AutoTokenizer = self.tokenizer,
+                            sequence_length = sequence_length):
+            
+            return tokenizer(example['text'],truncation=True,max_length=sequence_length)
+    
+        longmino = Dataset.from_list(list(self.longmino.take(num_examples)))
+        longmino = longmino.remove_columns(["id","metadata"])
+        longmino = longmino.map(tokenizer_func,batched=(batch_size > 1))
+        longmino = longmino.remove_columns("text")
+    
+        return DataLoader(longmino,shuffle=True,batch_size=batch_size,collate_fn=self.data_collator)
+
+# def process_stack_dataset(split: str,
+#                        language: str,
+#                        num_examples: int,
+#                        sequence_length: int,
+#                        batch_size: int,
+#                        tokenizer: AutoTokenizer,):
+#     pass

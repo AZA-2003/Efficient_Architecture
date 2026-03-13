@@ -3,8 +3,10 @@ import matplotlib.pyplot as plt
 from typing import List
 
 
-test_suite = [(64,16),(128,32),(128,64),(256,64),(512,64),(1024,64),(2048,64)]
-test_suite_X = [f"({r},{g})" for r,g in test_suite]
+#test_suite = [(64,16),(128,32),(128,64),(256,64),(512,64),(1024,64),(2048,64)]
+test_suite = [(1024,128),(1024,256),(2048,128),(2048,256),(4096,128),(4096,256)]
+#test_suite = [(256,128),(512,128),(1024,256),(2048,256),(4096,256)]
+test_suite_X = [0] + [f"({r},{g})" for r,g in test_suite]
 def generate_plots(json_files:List[str],
                   plot_name: str):
 
