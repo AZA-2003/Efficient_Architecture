@@ -51,6 +51,7 @@ def calculate_perplexity(model:transformers.models,
   #max_length = model.config.n_positions
   max_length = max_length
   stride = stride
+  device = model.get_input_embeddings().weight.device
   seq_len = example["input_ids"].size(1)
 
   nll_sum = 0.0
@@ -59,7 +60,7 @@ def calculate_perplexity(model:transformers.models,
   for begin_loc in tqdm(range(0, seq_len, stride),leave=False):
       end_loc = min(begin_loc + max_length, seq_len)
       trg_len = end_loc - prev_end_loc  # may be different from stride on last loop
-      input_ids = example["input_ids"][:, begin_loc:end_loc].to("cuda")
+      input_ids = example["input_ids"][:, begin_loc:end_loc].to(device)
       target_ids = input_ids.clone()
       target_ids[:, :-trg_len] = -100
 
@@ -89,11 +90,14 @@ def calculate_perplexity(model:transformers.models,
 
 def peak_memory(model:transformers.models,
                 example,):
-  torch.cuda.memory.reset_peak_memory_stats()
+  if torch.cuda.is_available():
+    torch.cuda.memory.reset_peak_memory_stats()
   model(**example)
-  peak_mem = torch.cuda.memory.max_memory_allocated()
-  torch.cuda.memory.reset_peak_memory_stats()
-  return round(peak_mem/(1024**3),3)
+  if torch.cuda.is_available():
+    peak_mem = torch.cuda.memory.max_memory_allocated()
+    torch.cuda.memory.reset_peak_memory_stats()
+    return round(peak_mem/(1024**3),3)
+  return 0.0
 
 def get_metrics(model: transformers.models,
                   dataloader: DataLoader,
@@ -104,25 +108,29 @@ def get_metrics(model: transformers.models,
   tps = []
   ppl = []
   pm = []
-  device = torch.device("cuda")
-  model = model.to(device)
+  if torch.cuda.is_available():
+    model = model.to("cuda")
+  device = model.get_input_embeddings().weight.device
   model.eval()
   with torch.no_grad():
     for batch in dataloader:
-      # Move only tensors to device; BatchEncoding and other types don't support .to()
-      batch = {
-        k: (v.to(device) if isinstance(v, torch.Tensor) else v)
-        for k, v in batch.items()
-      }
+      # Keep batch as dict/BatchEncoding, but move only tensor values.
+      # Never call `.to()` on the BatchEncoding itself.
+      batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
       #pm.append(peak_memory(model,batch))
       ttft.append(time_to_first_token(model,batch))
-      torch.cuda.memory.reset_peak_memory_stats()
+      if torch.cuda.is_available():
+        torch.cuda.memory.reset_peak_memory_stats()
       tps.append(tokens_per_second(model,batch,gen_length))
-      pm.append(round(torch.cuda.memory.max_memory_allocated()/(1024**3),3))
-      torch.cuda.memory.reset_peak_memory_stats()
+      if torch.cuda.is_available():
+        pm.append(round(torch.cuda.memory.max_memory_allocated()/(1024**3),3))
+        torch.cuda.memory.reset_peak_memory_stats()
+      else:
+        pm.append(0.0)
       ppl.append(calculate_perplexity(model,batch,max_length = read_length+gen_length, stride=read_length))
       del batch
-      torch.cuda.empty_cache()
+      if torch.cuda.is_available():
+        torch.cuda.empty_cache()
       gc.collect()
   return sum(pm)/len(pm), sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
 
