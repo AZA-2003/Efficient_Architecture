@@ -6,6 +6,20 @@ from torch.profiler import profile, record_function, ProfilerActivity
 import time
 from tqdm import tqdm
 
+def count_params(module: torch.nn.Module) -> int:
+  return sum(p.numel() for p in module.parameters())
+
+def non_embedding_params(model: torch.nn.Module) -> int:
+  total = count_params(model)
+
+  inp = model.get_input_embeddings() if hasattr(model, "get_input_embeddings") else None
+  inp_n = count_params(inp) if inp is not None else 0
+
+  out = model.get_output_embeddings() if hasattr(model, "get_output_embeddings") else None
+  out_n = 0 if (out is None or out is inp) else count_params(out)
+
+  return total - inp_n - out_n
+
 '''
 
 '''
