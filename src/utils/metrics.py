@@ -104,12 +104,16 @@ def get_metrics(model: transformers.models,
   tps = []
   ppl = []
   pm = []
-  model = model.to("cuda")
+  device = torch.device("cuda")
+  model = model.to(device)
   model.eval()
   with torch.no_grad():
     for batch in dataloader:
-      # BatchEncoding is dict-like; move each tensor to cuda (no .to() on the whole batch)
-      batch = {k: v.to("cuda", dtype=torch.bfloat16 if v.is_floating_point() else v.dtype) for k, v in batch.items()}
+      # Move only tensors to device; BatchEncoding and other types don't support .to()
+      batch = {
+        k: (v.to(device) if isinstance(v, torch.Tensor) else v)
+        for k, v in batch.items()
+      }
       #pm.append(peak_memory(model,batch))
       ttft.append(time_to_first_token(model,batch))
       torch.cuda.memory.reset_peak_memory_stats()
