@@ -104,6 +104,7 @@ def get_metrics(model: transformers.models,
   tps = []
   ppl = []
   pm = []
+  model = model.to("cuda")
   model.eval()
   with torch.no_grad():
     for batch in dataloader:
