@@ -14,8 +14,8 @@ def test_model(model: transformers.models,
     print(calculate_memory_footprint(model))
     for read_len,gen_len in test_suite:
         metrics[(read_len,gen_len)] = {}
-        data = data.process(20,read_len,1,)
-        pm,ttft,tps,ppl = get_metrics(model, data, read_len, gen_len)
+        dataloader = data.process(20,read_len,1,)
+        pm,ttft,tps,ppl = get_metrics(model, dataloader, read_len, gen_len)
         
         metrics[(read_len,gen_len)]["Peak Mem."] = pm
         metrics[(read_len,gen_len)]["TTFT"] = ttft
