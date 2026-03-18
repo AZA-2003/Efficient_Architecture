@@ -51,8 +51,9 @@ def calculate_perplexity(model:transformers.models,
   #max_length = model.config.n_positions
   max_length = max_length
   stride = stride
-  device = model.get_input_embeddings().weight.device
-  seq_len = example["input_ids"].size(1)
+  device = next(model.parameters()).device
+  input_ids_full = example["input_ids"] if isinstance(example, dict) else example.input_ids
+  seq_len = input_ids_full.size(1)
 
   nll_sum = 0.0
   n_tokens = 0
@@ -60,7 +61,7 @@ def calculate_perplexity(model:transformers.models,
   for begin_loc in tqdm(range(0, seq_len, stride),leave=False):
       end_loc = min(begin_loc + max_length, seq_len)
       trg_len = end_loc - prev_end_loc  # may be different from stride on last loop
-      input_ids = example["input_ids"][:, begin_loc:end_loc].to(device)
+      input_ids = input_ids_full[:, begin_loc:end_loc].to(device)
       target_ids = input_ids.clone()
       target_ids[:, :-trg_len] = -100
 
@@ -110,13 +111,15 @@ def get_metrics(model: transformers.models,
   pm = []
   if torch.cuda.is_available():
     model = model.to("cuda")
-  device = model.get_input_embeddings().weight.device
+  device = next(model.parameters()).device
   model.eval()
   with torch.no_grad():
     for batch in dataloader:
-      # Keep batch as dict/BatchEncoding, but move only tensor values.
-      # Never call `.to()` on the BatchEncoding itself.
-      batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+      # Prefer HF BatchEncoding.to(device) when available; it handles nested structures safely.
+      if hasattr(batch, "to"):
+        batch = batch.to(device)
+      else:
+        batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
       #pm.append(peak_memory(model,batch))
       ttft.append(time_to_first_token(model,batch))
       if torch.cuda.is_available():
