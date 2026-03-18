@@ -130,12 +130,3 @@ def model_profiler(model: transformers.models,
   
   prof.export_chrome_trace("trace.json")
   return prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=-1)
-
-  
-
-    
-
-  
-
-  
-

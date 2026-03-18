@@ -65,4 +65,3 @@ DO NOT USE!!
 #         self.processor = None
 #         self.model = AutoModelForCausalLM.from_pretrained('fla-hub/rwkv7-0.4B-world', trust_remote_code=True)
 #         self.tokenizer = AutoTokenizer.from_pretrained('fla-hub/rwkv7-0.4B-world', trust_remote_code=True)
-        
