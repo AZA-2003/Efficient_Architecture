@@ -51,7 +51,7 @@ def calculate_perplexity(model:transformers.models,
   #max_length = model.config.n_positions
   max_length = max_length
   stride = stride
-  seq_len = example.input_ids.size(1)
+  seq_len = example["input_ids"].size(1)
 
   nll_sum = 0.0
   n_tokens = 0
@@ -59,7 +59,7 @@ def calculate_perplexity(model:transformers.models,
   for begin_loc in tqdm(range(0, seq_len, stride),leave=False):
       end_loc = min(begin_loc + max_length, seq_len)
       trg_len = end_loc - prev_end_loc  # may be different from stride on last loop
-      input_ids = example.input_ids[:, begin_loc:end_loc].to("cuda")
+      input_ids = example["input_ids"][:, begin_loc:end_loc].to("cuda")
       target_ids = input_ids.clone()
       target_ids[:, :-trg_len] = -100
 
@@ -108,8 +108,8 @@ def get_metrics(model: transformers.models,
   model.eval()
   with torch.no_grad():
     for batch in dataloader:
-      batch = batch.to(torch.bfloat16)
-      batch = batch.to("cuda")
+      # BatchEncoding is dict-like; move each tensor to cuda (no .to() on the whole batch)
+      batch = {k: v.to("cuda", dtype=torch.bfloat16 if v.is_floating_point() else v.dtype) for k, v in batch.items()}
       #pm.append(peak_memory(model,batch))
       ttft.append(time_to_first_token(model,batch))
       torch.cuda.memory.reset_peak_memory_stats()
