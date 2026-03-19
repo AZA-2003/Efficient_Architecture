@@ -103,7 +103,7 @@ def profile_prefill(
 
   with torch.no_grad():
     if use_profiler:
-      with profile(activities=activities, record_shapes=True) as prof:
+      with profile(activities=activities, record_shapes=True, profile_memory=True) as prof:
         t0 = time.time()
         outputs = model(**batch, use_cache=True)
         t1 = time.time()
@@ -161,7 +161,7 @@ def profile_decode_with_past(
 
   with torch.no_grad():
     if use_profiler:
-      with profile(activities=activities, record_shapes=True) as prof:
+      with profile(activities=activities, record_shapes=True, profile_memory=True) as prof:
         t0 = time.time()
         for _ in range(decode_steps):
           outputs = model(
