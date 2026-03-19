@@ -56,6 +56,8 @@ class GPT2():
         self.processor = None
         self.model = AutoModelForCausalLM.from_pretrained("openai-community/gpt2")
         self.tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
 
 '''
 DO NOT USE!!
