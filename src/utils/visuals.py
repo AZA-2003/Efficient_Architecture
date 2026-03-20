@@ -4,8 +4,9 @@ from typing import List
 
 
 #test_suite = [(64,16),(128,32),(128,64),(256,64),(512,64),(1024,64),(2048,64)]
-test_suite = [(1024,128),(1024,256),(2048,128),(2048,256),(4096,128),(4096,256)]
-#test_suite = [(256,128),(512,128),(1024,256),(2048,256),(4096,256)]
+#test_suite = [(1024,128),(1024,256),(2048,128),(2048,256),(4096,128),(4096,256)]
+#test_suite = [(1024,256),(2048,512),(4096,1024),(4096,1024),(8192,1024)]
+test_suite = [(256,128),(512,128),(1024,256),(2048,256),(4096,256)]
 test_suite_X = [0] + [f"({r},{g})" for r,g in test_suite]
 def generate_plots(json_files:List[str],
                   plot_name: str):
@@ -29,21 +30,25 @@ def generate_plots(json_files:List[str],
         axs[0][0].set_xlabel("Read/Gen context length")
         axs[0][0].set_ylabel("Peak Memory(GB)")
         axs[0][0].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
+        axs[0][0].grid()
         
         axs[0][1].plot(ttft,'-o',label=name)
         axs[0][1].set_xlabel("Read/Gen context length")
         axs[0][1].set_ylabel("Time to First Token (sec.)")
         axs[0][1].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
+        axs[0][1].grid()
         
         axs[1][0].plot(tps,'-o',label=name)
         axs[1][0].set_xlabel("Read/Gen context length")
         axs[1][0].set_ylabel("Tokens/sec")
         axs[1][0].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
+        axs[1][0].grid()
         
         axs[1][1].plot(ppl,'-o',label=name)
         axs[1][1].set_xlabel("Read/Gen context length")
         axs[1][1].set_ylabel("Perplexity")
         axs[1][1].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
+        axs[1][1].grid()
     
     axs[0][0].legend(title="Models", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
     axs[0][1].legend(title="Models", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
