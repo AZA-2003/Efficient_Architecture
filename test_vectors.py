@@ -20,23 +20,23 @@ prefill_test_suite = [
     (16384, 16),
 ]
 
-# Decode sweep: keep a long prompt (read_len=16384) while varying gen_len from 16 to 256.
+# Decode sweep: keep a long prompt (read_len=512) while varying gen_len from 16 to 256.
 decode_test_suite = [
-    (16384, 16),
-    (16384, 32),
-    (16384, 64),
-    (16384, 128),
-    (16384, 256),
+    (512, 16),
+    (512, 32),
+    (512, 64),
+    (512, 128),
+    (512, 256),
 ]
 
 # Used for the main benchmark loop (see `src/test.py`) — combined set of both sweeps.
 benchmark_test_suite = [
     *prefill_test_suite,
-    # Add extra decode points beyond the shared (16384, 16) prefill point
-    (16384, 32),
-    (16384, 64),
-    (16384, 128),
-    (16384, 256),
+    # Add extra decode points beyond the shared (512, 16) prefill point
+    (512, 32),
+    (512, 64),
+    (512, 128),
+    (512, 256),
 ]
 
 # Used for plotting comparisons (see `src/utils/visuals.py`)

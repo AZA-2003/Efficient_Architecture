@@ -10,74 +10,88 @@ def generate_plots(
     plot_name: str,
     suite: List[tuple[int, int]] | None = None,
 ):
-    # `suite` controls which (read_len, gen_len) points are plotted + axis labels.
-    test_suite = suite if suite is not None else benchmark_test_suite
-    test_suite_X = [0] + [f"({r},{g})" for r, g in test_suite]
+    # Memory uses the combined suite. Latencies use their intended subsets.
+    combined_suite = suite if suite is not None else benchmark_test_suite
+    combined_X = [f"({r},{g})" for (r, g) in combined_suite]
 
-    prefill_set = set(prefill_test_suite)
-    decode_set = set(decode_test_suite)
+    prefill_X = [f"({r},{g})" for (r, g) in prefill_test_suite]
+    decode_X = [f"({r},{g})" for (r, g) in decode_test_suite]
 
-    #plt.figure(figsize=(20,20)) 
-    fig, axs = plt.subplots(2,2,figsize=(12,12))
+    x_combined = list(range(len(combined_suite)))
+    x_prefill = list(range(len(prefill_test_suite)))
+    x_decode = list(range(len(decode_test_suite)))
+
+    fig, axs = plt.subplots(2, 2, figsize=(18, 12))
     plt.subplots_adjust(wspace=0.8, hspace=0.8)
-    
-    #   plt.tight_layout(h_pad=2)
+
+    # Set ticks/labels once per axis
+    axs[0][0].set_xlabel("Read/Gen context length")
+    axs[0][0].set_ylabel("Peak Memory(GB)")
+    axs[0][0].set_xticks(x_combined)
+    axs[0][0].set_xticklabels(combined_X, rotation=45, fontsize=10)
+
+    axs[0][1].set_xlabel("Read/Gen context length")
+    axs[0][1].set_ylabel("Time to First Token (sec.)")
+    axs[0][1].set_xticks(x_prefill)
+    axs[0][1].set_xticklabels(prefill_X, rotation=45, fontsize=10)
+
+    axs[1][0].set_xlabel("Read/Gen context length")
+    axs[1][0].set_ylabel("Tokens/sec")
+    axs[1][0].set_xticks(x_decode)
+    axs[1][0].set_xticklabels(decode_X, rotation=45, fontsize=10)
+
+    axs[1][1].set_xlabel("Read/Gen context length")
+    axs[1][1].set_ylabel("Perplexity")
+    axs[1][1].set_xticks(x_prefill)
+    axs[1][1].set_xticklabels(prefill_X, rotation=45, fontsize=10)
+
     for json_file in json_files:
         name = json_file.split("_")[0]
-        with open(json_file,"r") as f:
+        with open(json_file, "r") as f:
             metrics = json.load(f)
 
+        # Full peak memory (combined)
         pm = []
-        ttft = []
-        tps = []
-        ppl = []
-        for r, g in test_suite:
+        for (r, g) in combined_suite:
             key = f"({r},{g})"
             if key in metrics and isinstance(metrics[key], dict) and len(metrics[key]) > 0:
                 pm.append(metrics[key].get("Peak Mem.", float("nan")))
-                # Prefill-latency metrics only for prefill suite points
-                if (r, g) in prefill_set:
-                    ttft.append(metrics[key].get("TTFT", float("nan")))
-                    ppl.append(metrics[key].get("PPL", float("nan")))
-                else:
-                    ttft.append(float("nan"))
-                    ppl.append(float("nan"))
-                # Decode-latency metrics only for decode suite points
-                if (r, g) in decode_set:
-                    tps.append(metrics[key].get("TPS", float("nan")))
-                else:
-                    tps.append(float("nan"))
             else:
                 pm.append(float("nan"))
+
+        # Prefill-only metrics
+        ttft = []
+        ppl = []
+        for (r, g) in prefill_test_suite:
+            key = f"({r},{g})"
+            if key in metrics and isinstance(metrics[key], dict) and len(metrics[key]) > 0:
+                ttft.append(metrics[key].get("TTFT", float("nan")))
+                ppl.append(metrics[key].get("PPL", float("nan")))
+            else:
                 ttft.append(float("nan"))
-                tps.append(float("nan"))
                 ppl.append(float("nan"))
 
-        axs[0][0].plot(pm,'-o',label=name)
-        axs[0][0].set_xlabel("Read/Gen context length")
-        axs[0][0].set_ylabel("Peak Memory(GB)")
-        axs[0][0].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
-        
-        axs[0][1].plot(ttft,'-o',label=name)
-        axs[0][1].set_xlabel("Read/Gen context length")
-        axs[0][1].set_ylabel("Time to First Token (sec.)")
-        axs[0][1].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
-        
-        axs[1][0].plot(tps,'-o',label=name)
-        axs[1][0].set_xlabel("Read/Gen context length")
-        axs[1][0].set_ylabel("Tokens/sec")
-        axs[1][0].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
-        
-        axs[1][1].plot(ppl,'-o',label=name)
-        axs[1][1].set_xlabel("Read/Gen context length")
-        axs[1][1].set_ylabel("Perplexity")
-        axs[1][1].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
-    
-    axs[0][0].legend(title="Models", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
-    axs[0][1].legend(title="Models", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
-    axs[1][0].legend(title="Models", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
-    axs[1][1].legend(title="Models", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
-    fig.savefig(f'{plot_name}.png')
+        # Decode-only metric
+        tps = []
+        for (r, g) in decode_test_suite:
+            key = f"({r},{g})"
+            if key in metrics and isinstance(metrics[key], dict) and len(metrics[key]) > 0:
+                tps.append(metrics[key].get("TPS", float("nan")))
+            else:
+                tps.append(float("nan"))
+
+        axs[0][0].plot(x_combined, pm, "-o", label=name)
+        axs[0][1].plot(x_prefill, ttft, "-o", label=name)
+        axs[1][0].plot(x_decode, tps, "-o", label=name)
+        axs[1][1].plot(x_prefill, ppl, "-o", label=name)
+
+    axs[0][0].legend(title="Models", loc="best")
+    axs[0][1].legend(title="Models", loc="best")
+    axs[1][0].legend(title="Models", loc="best")
+    axs[1][1].legend(title="Models", loc="best")
+
+    fig.tight_layout()
+    fig.savefig(f"{plot_name}.png")
 
 
 def generate_incremental_memory_plots(
@@ -94,8 +108,15 @@ def generate_incremental_memory_plots(
     - per-model metrics JSON schema from `main.ipynb` with keys like "Peak Mem."
     - baseline JSON produced by `main.ipynb` (see `baseline_peak_mem_gb_by_model`)
     """
-    test_suite = suite if suite is not None else benchmark_test_suite
-    test_suite_X = [f"({r},{g})" for r, g in test_suite]
+    combined_suite = suite if suite is not None else benchmark_test_suite
+    combined_X = [f"({r},{g})" for (r, g) in combined_suite]
+
+    prefill_X = [f"({r},{g})" for (r, g) in prefill_test_suite]
+    decode_X = [f"({r},{g})" for (r, g) in decode_test_suite]
+
+    x_combined = list(range(len(combined_suite)))
+    x_prefill = list(range(len(prefill_test_suite)))
+    x_decode = list(range(len(decode_test_suite)))
 
     from pathlib import Path
 
@@ -104,16 +125,30 @@ def generate_incremental_memory_plots(
 
     baseline_peak = baseline_obj.get("baseline_peak_mem_gb_by_model")
     if baseline_peak is None:
-        # Backwards/alternate shape: allow direct mapping model->scalar
         baseline_peak = baseline_obj
 
-    fig, axs = plt.subplots(2, 2, figsize=(12, 12))
+    fig, axs = plt.subplots(2, 2, figsize=(18, 12))
     plt.subplots_adjust(wspace=0.8, hspace=0.8)
 
-    x = list(range(len(test_suite)))
+    axs[0][0].set_xlabel("Read/Gen context length")
+    axs[0][0].set_ylabel("Peak Incremental Memory (GB)")
+    axs[0][0].set_xticks(x_combined)
+    axs[0][0].set_xticklabels(combined_X, rotation=45, fontsize=10)
 
-    prefill_set = set(prefill_test_suite)
-    decode_set = set(decode_test_suite)
+    axs[0][1].set_xlabel("Read/Gen context length")
+    axs[0][1].set_ylabel("Time to First Token (sec.)")
+    axs[0][1].set_xticks(x_prefill)
+    axs[0][1].set_xticklabels(prefill_X, rotation=45, fontsize=10)
+
+    axs[1][0].set_xlabel("Read/Gen context length")
+    axs[1][0].set_ylabel("Tokens/sec")
+    axs[1][0].set_xticks(x_decode)
+    axs[1][0].set_xticklabels(decode_X, rotation=45, fontsize=10)
+
+    axs[1][1].set_xlabel("Read/Gen context length")
+    axs[1][1].set_ylabel("Perplexity")
+    axs[1][1].set_xticks(x_prefill)
+    axs[1][1].set_xticklabels(prefill_X, rotation=45, fontsize=10)
 
     for json_file in json_files:
         json_file = str(json_file)
@@ -128,9 +163,9 @@ def generate_incremental_memory_plots(
         if isinstance(baseline_peak, dict):
             base_scalar = baseline_peak.get(model_name)
 
-        # Peak incremental memory (use combined points)
+        # Peak incremental memory over the combined suite
         inc_mem_gb = []
-        for read_len, gen_len in test_suite:
+        for read_len, gen_len in combined_suite:
             key = f"({read_len},{gen_len})"
             if (
                 key in metrics
@@ -142,59 +177,38 @@ def generate_incremental_memory_plots(
             else:
                 inc_mem_gb.append(float("nan"))
 
-        # Other metrics with suite-specific filtering
+        # Prefill-only: TTFT + PPL
         ttft = []
-        tps = []
         ppl = []
-        for read_len, gen_len in test_suite:
+        for read_len, gen_len in prefill_test_suite:
             key = f"({read_len},{gen_len})"
             if key in metrics and isinstance(metrics[key], dict) and len(metrics[key]) > 0:
-                if (read_len, gen_len) in prefill_set:
-                    ttft.append(metrics[key].get("TTFT", float("nan")))
-                    ppl.append(metrics[key].get("PPL", float("nan")))
-                else:
-                    ttft.append(float("nan"))
-                    ppl.append(float("nan"))
-
-                if (read_len, gen_len) in decode_set:
-                    tps.append(metrics[key].get("TPS", float("nan")))
-                else:
-                    tps.append(float("nan"))
+                ttft.append(metrics[key].get("TTFT", float("nan")))
+                ppl.append(metrics[key].get("PPL", float("nan")))
             else:
                 ttft.append(float("nan"))
-                tps.append(float("nan"))
                 ppl.append(float("nan"))
 
-        axs[0][0].plot(x, inc_mem_gb, "-o", label=model_name)
-        axs[0][1].plot(x, ttft, "-o", label=model_name)
-        axs[1][0].plot(x, tps, "-o", label=model_name)
-        axs[1][1].plot(x, ppl, "-o", label=model_name)
+        # Decode-only: TPS
+        tps = []
+        for read_len, gen_len in decode_test_suite:
+            key = f"({read_len},{gen_len})"
+            if key in metrics and isinstance(metrics[key], dict) and len(metrics[key]) > 0:
+                tps.append(metrics[key].get("TPS", float("nan")))
+            else:
+                tps.append(float("nan"))
 
-    axs[0][0].set_xlabel("Read/Gen context length")
-    axs[0][0].set_ylabel("Peak Incremental Memory (GB)")
-    axs[0][0].set_xticks(x)
-    axs[0][0].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
+        axs[0][0].plot(x_combined, inc_mem_gb, "-o", label=model_name)
+        axs[0][1].plot(x_prefill, ttft, "-o", label=model_name)
+        axs[1][0].plot(x_decode, tps, "-o", label=model_name)
+        axs[1][1].plot(x_prefill, ppl, "-o", label=model_name)
 
-    axs[0][1].set_xlabel("Read/Gen context length")
-    axs[0][1].set_ylabel("Time to First Token (sec.)")
-    axs[0][1].set_xticks(x)
-    axs[0][1].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
+    axs[0][0].legend(title="Models", loc="best")
+    axs[0][1].legend(title="Models", loc="best")
+    axs[1][0].legend(title="Models", loc="best")
+    axs[1][1].legend(title="Models", loc="best")
 
-    axs[1][0].set_xlabel("Read/Gen context length")
-    axs[1][0].set_ylabel("Tokens/sec")
-    axs[1][0].set_xticks(x)
-    axs[1][0].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
-
-    axs[1][1].set_xlabel("Read/Gen context length")
-    axs[1][1].set_ylabel("Perplexity")
-    axs[1][1].set_xticks(x)
-    axs[1][1].set_xticklabels(test_suite_X, rotation=45, fontsize=10)
-
-    axs[0][0].legend(title="Models", bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
-    axs[0][1].legend(title="Models", bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
-    axs[1][0].legend(title="Models", bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
-    axs[1][1].legend(title="Models", bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
-
+    fig.tight_layout()
     fig.savefig(f"{plot_name}.png")
 
 
