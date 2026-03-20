@@ -14,6 +14,13 @@ class c4_dataset():
                 language: str,
                 tokenizer: AutoTokenizer,):
         self.tokenizer = tokenizer
+        if self.tokenizer.pad_token is None:
+            if self.tokenizer.eos_token is not None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            elif self.tokenizer.unk_token is not None:
+                self.tokenizer.pad_token = self.tokenizer.unk_token
+            else:
+                self.tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         self.data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
         self.c4 = load_dataset("allenai/c4",language,split=split,streaming=True) 
         
@@ -42,6 +49,13 @@ class longmino_dataset():
     def __init__(self,
                 tokenizer: AutoTokenizer,):
         self.tokenizer = tokenizer
+        if self.tokenizer.pad_token is None:
+            if self.tokenizer.eos_token is not None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            elif self.tokenizer.unk_token is not None:
+                self.tokenizer.pad_token = self.tokenizer.unk_token
+            else:
+                self.tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         self.data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
         self.longmino = load_dataset("allenai/dolma3_longmino_mix-50B-1025",split="train",streaming=True) 
         

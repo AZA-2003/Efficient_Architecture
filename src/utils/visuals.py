@@ -50,8 +50,16 @@ def generate_plots(json_files:List[str],
     axs[1][0].legend(title="Models", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
     axs[1][1].legend(title="Models", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
     fig.savefig(f'{plot_name}.png')
-  
-  
 
 
-generate_plots(["Qwen3_metrics.json","Qwen3.5_metrics.json","IBM-G1B_metrics.json","IBM-G350M_metrics.json","LFM2_metrics.json"],"plots")
+if __name__ == "__main__":
+    generate_plots(
+        [
+            "Qwen3_metrics.json",
+            "Qwen3.5_metrics.json",
+            "IBM-G1B_metrics.json",
+            "IBM-G350M_metrics.json",
+            "LFM2_metrics.json",
+        ],
+        "plots",
+    )
