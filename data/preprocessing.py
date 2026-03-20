@@ -4,9 +4,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import os
+import gc
 from pathlib import Path
-
-
 
 class c4_dataset():
     def __init__(self,
@@ -34,11 +33,23 @@ class c4_dataset():
                             sequence_length = sequence_length):
             
             return tokenizer(example['text'],truncation=True,max_length=sequence_length)
-    
-        c4 = Dataset.from_list(list(self.c4.take(num_examples)))
-        c4 = c4.remove_columns(["timestamp","url"])
+
+        c4 = self.c4.remove_columns(["timestamp","url"])
+        i = 0
+        dd = []
+        for d in c4:
+          if l:=len(self.tokenizer.tokenize(d["text"])) >= sequence_length:
+            i+=1
+            dd.append(d)
+          if i >= num_examples:
+            break
+        c4 = Dataset.from_list(dd)
+        print(f"{i} out of {num_examples} samples found!")
+        del dd,i
+        #c4 = Dataset.from_list(list(self.c4.take(num_examples)))
         c4 = c4.map(tokenizer_func,batched=(batch_size > 1))
         c4 = c4.remove_columns("text")
+        gc.collect()
     
         return DataLoader(c4,shuffle=True,batch_size=batch_size,collate_fn=self.data_collator)
 

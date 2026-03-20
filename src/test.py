@@ -5,8 +5,10 @@ import sys
 sys.path.append(".")
 from Efficient_Architecture.src.utils.metrics import *
 
+from test_vectors import benchmark_test_suite
 
-test_suite = [(64,16),(128,32),(128,64),(256,128),(512,128),(1024,256),(2048,256)]
+# Backwards-compatible name used throughout notebooks / code.
+test_suite = benchmark_test_suite
 
 def _get_model_max_context(model) -> int | None:
     cfg = getattr(model, "config", None)

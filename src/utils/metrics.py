@@ -188,13 +188,8 @@ def get_metrics(model: transformers.models,
 # Profiling (torch.profiler, prefill/decode traces, chrome trace export)
 # =============================================================================
 
-profiling_test_suite = [
-  (256, 8),
-  (512, 8),
-  (1024, 8),
-  (512, 16),
-  (1024, 16),
-]
+# Centralized vector definitions
+from test_vectors import profiling_test_suite
 
 
 def profile_prefill(
@@ -205,7 +200,7 @@ def profile_prefill(
 ):
   """
   Prefill = one forward pass over the prompt.
-  Returns (outputs, timing_s, cuda_peak_gb, cpu_peak_mb)
+  Returns (outputs, timing_s, cuda_peak_gb, cpu_peak_mb, profiler_tables)
   """
   model.eval()
   device = _infer_model_device(model)
@@ -222,17 +217,47 @@ def profile_prefill(
   if torch.cuda.is_available():
     torch.cuda.reset_peak_memory_stats()
 
+  profiler_tables = {}
+
   with torch.no_grad():
     if use_profiler:
-      with profile(activities=activities, record_shapes=True, profile_memory=True, with_flops=True) as prof:
+      with profile(
+        activities=activities,
+        record_shapes=True,
+        profile_memory=True,
+        with_flops=True,
+      ) as prof:
         t0 = time.time()
         outputs = model(**batch, use_cache=True)
         t1 = time.time()
+
       if trace_path is not None:
         prof.export_chrome_trace(trace_path)
-        print(prof.key_averages().table(sort_by="self_cuda_time_total" if torch.cuda.is_available() else "self_cpu_time_total", row_limit=-1))
-        print(prof.key_averages().table(sort_by="flops", row_limit=10))
-        print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=10))
+
+      # Capture key_averages tables as strings (so callers can write them to logs/files).
+      # Keep it conservative in size to avoid giant logs.
+      try:
+        time_sort = "self_cuda_time_total" if torch.cuda.is_available() else "self_cpu_time_total"
+        profiler_tables["prefill_key_averages_time_table"] = prof.key_averages().table(
+          sort_by=time_sort,
+          row_limit=50,
+        )
+      except Exception as e:
+        profiler_tables["prefill_key_averages_time_table_error"] = str(e)
+
+      try:
+        profiler_tables["prefill_key_averages_flops_table"] = prof.key_averages().table(sort_by="flops", row_limit=20)
+      except Exception as e:
+        profiler_tables["prefill_key_averages_flops_table_error"] = str(e)
+
+      try:
+        profiler_tables["prefill_key_averages_cuda_mem_table"] = prof.key_averages().table(
+          sort_by="self_cuda_memory_usage",
+          row_limit=20,
+        )
+      except Exception as e:
+        profiler_tables["prefill_key_averages_cuda_mem_table_error"] = str(e)
+
     else:
       t0 = time.time()
       outputs = model(**batch, use_cache=True)
@@ -247,7 +272,7 @@ def profile_prefill(
     peak_gpu_gb = round(peak_bytes / (1024 ** 3), 3)
     torch.cuda.reset_peak_memory_stats()
 
-  return outputs, (t1 - t0), peak_gpu_gb, round(peak_cpu_bytes / (1024 ** 2), 3)
+  return outputs, (t1 - t0), peak_gpu_gb, round(peak_cpu_bytes / (1024 ** 2), 3), profiler_tables
 
 
 def profile_decode_with_past(
@@ -260,7 +285,7 @@ def profile_decode_with_past(
 ):
   """
   Decode = iterative steps using past_key_values.
-  Returns (generated_tokens, timing_s, cuda_peak_gb, cpu_peak_mb)
+  Returns (generated_tokens, timing_s, cuda_peak_gb, cpu_peak_mb, profiler_tables)
   """
   model.eval()
   device = _infer_model_device(model)
@@ -283,9 +308,16 @@ def profile_decode_with_past(
   if torch.cuda.is_available():
     torch.cuda.reset_peak_memory_stats()
 
+  profiler_tables = {}
+
   with torch.no_grad():
     if use_profiler:
-      with profile(activities=activities, record_shapes=True, profile_memory=True) as prof:
+      with profile(
+        activities=activities,
+        record_shapes=True,
+        profile_memory=True,
+        with_flops=True,
+      ) as prof:
         t0 = time.time()
         for _ in range(decode_steps):
           outputs = model(
@@ -298,8 +330,32 @@ def profile_decode_with_past(
           next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
           generated.append(next_token)
         t1 = time.time()
+
       if trace_path is not None:
         prof.export_chrome_trace(trace_path)
+
+      try:
+        time_sort = "self_cuda_time_total" if torch.cuda.is_available() else "self_cpu_time_total"
+        profiler_tables["decode_key_averages_time_table"] = prof.key_averages().table(
+          sort_by=time_sort,
+          row_limit=50,
+        )
+      except Exception as e:
+        profiler_tables["decode_key_averages_time_table_error"] = str(e)
+
+      try:
+        profiler_tables["decode_key_averages_flops_table"] = prof.key_averages().table(sort_by="flops", row_limit=20)
+      except Exception as e:
+        profiler_tables["decode_key_averages_flops_table_error"] = str(e)
+
+      try:
+        profiler_tables["decode_key_averages_cuda_mem_table"] = prof.key_averages().table(
+          sort_by="self_cuda_memory_usage",
+          row_limit=20,
+        )
+      except Exception as e:
+        profiler_tables["decode_key_averages_cuda_mem_table_error"] = str(e)
+
     else:
       t0 = time.time()
       for _ in range(decode_steps):
@@ -323,7 +379,7 @@ def profile_decode_with_past(
     peak_gpu_gb = round(peak_bytes / (1024 ** 3), 3)
     torch.cuda.reset_peak_memory_stats()
 
-  return generated, (t1 - t0), peak_gpu_gb, round(peak_cpu_bytes / (1024 ** 2), 3)
+  return generated, (t1 - t0), peak_gpu_gb, round(peak_cpu_bytes / (1024 ** 2), 3), profiler_tables
 
 
 def profile_prefill_decode(
@@ -343,7 +399,7 @@ def profile_prefill_decode(
   prefill_trace = str(Path(traces_dir) / f"{trace_prefix}_prefill.json")
   decode_trace = str(Path(traces_dir) / f"{trace_prefix}_decode.json")
 
-  prefill_out, prefill_s, prefill_peak_gb, prefill_cpu_peak_mb = profile_prefill(
+  prefill_out, prefill_s, prefill_peak_gb, prefill_cpu_peak_mb, prefill_tables = profile_prefill(
     model,
     batch,
     use_profiler=True,
@@ -351,7 +407,7 @@ def profile_prefill_decode(
   )
   past = prefill_out.past_key_values
 
-  _, decode_s, decode_peak_gb, decode_cpu_peak_mb = profile_decode_with_past(
+  _, decode_s, decode_peak_gb, decode_cpu_peak_mb, decode_tables = profile_decode_with_past(
     model,
     batch,
     past_key_values=past,
@@ -367,6 +423,8 @@ def profile_prefill_decode(
     "decode_peak_gpu_gb": decode_peak_gb,
     "prefill_cpu_peak_mb": prefill_cpu_peak_mb,
     "decode_cpu_peak_mb": decode_cpu_peak_mb,
+    **prefill_tables,
+    **decode_tables,
   }
 
 
