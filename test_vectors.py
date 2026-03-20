@@ -44,13 +44,10 @@ plot_test_suite = [*benchmark_test_suite]
 
 # Used for profiling traces (see `src/utils/metrics.py` + `profiling_main.ipynb`)
 profiling_test_suite = [
-    # Keep profiling lightweight: sample the same prefill/decode ranges.
+    # Keep profiling very lightweight: only a few small points.
     (64, 16),
-    (1024, 16),
-    (4096, 16),
-    (16384, 16),
-    (16384, 64),
-    (16384, 256),
+    (128, 16),
+    (256, 32),
 ]
 
 # Backwards-compatible alias (some code/tests refer to `test_suite`)
