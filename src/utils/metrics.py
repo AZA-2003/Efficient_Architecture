@@ -1,14 +1,21 @@
-import transformers
-import torch
 import gc
-from torch.utils.data import DataLoader
-from torch.profiler import profile, record_function, ProfilerActivity
 import time
-from tqdm import tqdm
 from pathlib import Path
+
+import torch
+import transformers
+from torch.profiler import ProfilerActivity, profile
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+
+# =============================================================================
+# Utilities
+# =============================================================================
 
 def count_params(module: torch.nn.Module) -> int:
   return sum(p.numel() for p in module.parameters())
+
 
 def non_embedding_params(model: torch.nn.Module) -> int:
   total = count_params(model)
@@ -21,18 +28,11 @@ def non_embedding_params(model: torch.nn.Module) -> int:
 
   return total - inp_n - out_n
 
-profiling_test_suite = [
-  (256, 8),
-  (512, 8),
-  (1024, 8),
-  (512, 16),
-  (1024, 16),
-]
 
 def _infer_model_device(model: torch.nn.Module) -> torch.device:
-  # Works even when models are partially offloaded; assumes the parameter generator
-  # yields at least one tensor on the active device.
+  """Infer device from the first model parameter (handles common placement cases)."""
   return next(model.parameters()).device
+
 
 def safe_move_batch_to_device(batch, device: torch.device):
   """
@@ -42,225 +42,33 @@ def safe_move_batch_to_device(batch, device: torch.device):
   if isinstance(batch, dict):
     return {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
 
-  # HF BatchEncoding supports .items()
   if hasattr(batch, "items"):
     return {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
 
   raise TypeError(f"Unsupported batch type for device move: {type(batch)}")
 
-def _cuda_peak_gb(fn):
-  """
-  Run `fn()` and return (result, peak_gb).
-  If CUDA isn't available, peak_gb is 0.0.
-  """
-  if not torch.cuda.is_available():
-    return fn(), 0.0
 
-  torch.cuda.reset_peak_memory_stats()
-  out = fn()
-  peak_bytes = torch.cuda.max_memory_allocated()
-  torch.cuda.reset_peak_memory_stats()
-  return out, round(peak_bytes / (1024 ** 3), 3)
+# =============================================================================
+# Original metrics (benchmarking / evaluation)
+# =============================================================================
 
-def _cpu_peak_mb(fn):
-  """
-  Approximate CPU memory usage using tracemalloc peak for the section.
-  This is not the same as process RSS, but it correlates with Python allocations.
-  """
-  import tracemalloc
-  tracemalloc.start()
-  try:
-    out = fn()
-    _, peak = tracemalloc.get_traced_memory()
-    return out, round(peak / (1024 ** 2), 3)
-  finally:
-    tracemalloc.stop()
+"""
 
-def profile_prefill(
-  model: transformers.models,
-  batch,
-  use_profiler: bool = True,
-  trace_path: str | None = None,
-):
-  """
-  Prefill = one forward pass over the prompt.
-  Returns (outputs, timing_s, cuda_peak_gb, cpu_peak_mb)
-  """
-  model.eval()
-  device = _infer_model_device(model)
-  batch = safe_move_batch_to_device(batch, device)
-
-  activities = (
-    [ProfilerActivity.CPU, ProfilerActivity.CUDA]
-    if (use_profiler and torch.cuda.is_available())
-    else ([ProfilerActivity.CPU] if use_profiler else [])
-  )
-
-  import tracemalloc
-  tracemalloc.start()
-  if torch.cuda.is_available():
-    torch.cuda.reset_peak_memory_stats()
-
-  with torch.no_grad():
-    if use_profiler:
-      with profile(activities=activities, record_shapes=True, profile_memory=True) as prof:
-        t0 = time.time()
-        outputs = model(**batch, use_cache=True)
-        t1 = time.time()
-      if trace_path is not None:
-        prof.export_chrome_trace(trace_path)
-    else:
-      t0 = time.time()
-      outputs = model(**batch, use_cache=True)
-      t1 = time.time()
-
-  _, peak_cpu_bytes = tracemalloc.get_traced_memory()
-  tracemalloc.stop()
-
-  peak_gpu_gb = 0.0
-  if torch.cuda.is_available():
-    peak_bytes = torch.cuda.max_memory_allocated()
-    peak_gpu_gb = round(peak_bytes / (1024 ** 3), 3)
-    torch.cuda.reset_peak_memory_stats()
-
-  return outputs, (t1 - t0), peak_gpu_gb, round(peak_cpu_bytes / (1024 ** 2), 3)
-
-def profile_decode_with_past(
-  model: transformers.models,
-  batch,
-  past_key_values,
-  decode_steps: int,
-  use_profiler: bool = True,
-  trace_path: str | None = None,
-):
-  """
-  Decode = iterative steps using past_key_values.
-  Returns (generated_tokens, timing_s, cuda_peak_gb, cpu_peak_mb)
-  """
-  model.eval()
-  device = _infer_model_device(model)
-  batch = safe_move_batch_to_device(batch, device)
-
-  # Use the last prompt token as the first decode input.
-  input_ids = batch["input_ids"]
-  next_token = input_ids[:, -1:].contiguous()
-
-  pkv = past_key_values
-  generated = []
-
-  activities = (
-    [ProfilerActivity.CPU, ProfilerActivity.CUDA]
-    if (use_profiler and torch.cuda.is_available())
-    else ([ProfilerActivity.CPU] if use_profiler else [])
-  )
-
-  import tracemalloc
-  tracemalloc.start()
-  if torch.cuda.is_available():
-    torch.cuda.reset_peak_memory_stats()
-
-  with torch.no_grad():
-    if use_profiler:
-      with profile(activities=activities, record_shapes=True, profile_memory=True) as prof:
-        t0 = time.time()
-        for _ in range(decode_steps):
-          outputs = model(
-            input_ids=next_token,
-            past_key_values=pkv,
-            use_cache=True,
-          )
-          logits = outputs.logits
-          pkv = outputs.past_key_values
-          next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
-          generated.append(next_token)
-        t1 = time.time()
-      if trace_path is not None:
-        prof.export_chrome_trace(trace_path)
-    else:
-      t0 = time.time()
-      for _ in range(decode_steps):
-        outputs = model(
-          input_ids=next_token,
-          past_key_values=pkv,
-          use_cache=True,
-        )
-        logits = outputs.logits
-        pkv = outputs.past_key_values
-        next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
-        generated.append(next_token)
-      t1 = time.time()
-
-  _, peak_cpu_bytes = tracemalloc.get_traced_memory()
-  tracemalloc.stop()
-
-  peak_gpu_gb = 0.0
-  if torch.cuda.is_available():
-    peak_bytes = torch.cuda.max_memory_allocated()
-    peak_gpu_gb = round(peak_bytes / (1024 ** 3), 3)
-    torch.cuda.reset_peak_memory_stats()
-
-  return generated, (t1 - t0), peak_gpu_gb, round(peak_cpu_bytes / (1024 ** 2), 3)
-
-def profile_prefill_decode(
-  model: transformers.models,
-  batch,
-  decode_steps: int,
-  traces_dir: str | None = None,
-  trace_prefix: str | None = None,
-):
-  """
-  Profile prefill and decode phases and return a flat dict of results.
-  """
-  traces_dir = traces_dir or "."
-  Path(traces_dir).mkdir(parents=True, exist_ok=True)
-  trace_prefix = trace_prefix or "trace"
-
-  prefill_trace = str(Path(traces_dir) / f"{trace_prefix}_prefill.json")
-  decode_trace = str(Path(traces_dir) / f"{trace_prefix}_decode.json")
-
-  prefill_out, prefill_s, prefill_peak_gb, prefill_cpu_peak_mb = profile_prefill(
-    model,
-    batch,
-    use_profiler=True,
-    trace_path=prefill_trace,
-  )
-  past = prefill_out.past_key_values
-
-  _, decode_s, decode_peak_gb, decode_cpu_peak_mb = profile_decode_with_past(
-    model,
-    batch,
-    past_key_values=past,
-    decode_steps=decode_steps,
-    use_profiler=True,
-    trace_path=decode_trace,
-  )
-
-  return {
-    "prefill_s": prefill_s,
-    "decode_s": decode_s,
-    "prefill_peak_gpu_gb": prefill_peak_gb,
-    "decode_peak_gpu_gb": decode_peak_gb,
-    "prefill_cpu_peak_mb": prefill_cpu_peak_mb,
-    "decode_cpu_peak_mb": decode_cpu_peak_mb,
-  }
-
-'''
-
-'''
+"""
 def calculate_memory_footprint(model:transformers.models,):
   #total_params = sum(p.numel() for p in model.parameters())
   total_param_bytes = model.get_memory_footprint()
   return round((total_param_bytes)/(1024*1024*1024),3)
 
-'''
+"""
 
-'''
+"""
 def tokens_per_second(model:transformers.models,
                       example,
                       num_tokens: int):
   start = time.time()
   initial_length = example["input_ids"].shape[1]
-  outputs = model.generate(**example, 
+  outputs = model.generate(**example,
                           max_new_tokens=num_tokens,
                           num_beams=4,
                           do_sample=False,).cpu()
@@ -269,9 +77,9 @@ def tokens_per_second(model:transformers.models,
   del outputs
   return new_token_length/time_elapsed
 
-'''
+"""
 
-'''
+"""
 def time_to_first_token(model:transformers.models,
                         example,):
   start = time.time()
@@ -279,9 +87,9 @@ def time_to_first_token(model:transformers.models,
   time_elapsed = time.time() - start
   return time_elapsed
 
-'''
+"""
 
-'''
+"""
 def calculate_perplexity(model:transformers.models,
                         example,
                         max_length = 1024,
@@ -374,6 +182,193 @@ def get_metrics(model: transformers.models,
         torch.cuda.empty_cache()
       gc.collect()
   return sum(pm)/len(pm), sum(ttft)/len(ttft), sum(tps)/len(tps), sum(ppl)/len(ppl)
+
+
+# =============================================================================
+# Profiling (torch.profiler, prefill/decode traces, chrome trace export)
+# =============================================================================
+
+profiling_test_suite = [
+  (256, 8),
+  (512, 8),
+  (1024, 8),
+  (512, 16),
+  (1024, 16),
+]
+
+
+def profile_prefill(
+  model: transformers.models,
+  batch,
+  use_profiler: bool = True,
+  trace_path: str | None = None,
+):
+  """
+  Prefill = one forward pass over the prompt.
+  Returns (outputs, timing_s, cuda_peak_gb, cpu_peak_mb)
+  """
+  model.eval()
+  device = _infer_model_device(model)
+  batch = safe_move_batch_to_device(batch, device)
+
+  activities = (
+    [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+    if (use_profiler and torch.cuda.is_available())
+    else ([ProfilerActivity.CPU] if use_profiler else [])
+  )
+
+  import tracemalloc
+  tracemalloc.start()
+  if torch.cuda.is_available():
+    torch.cuda.reset_peak_memory_stats()
+
+  with torch.no_grad():
+    if use_profiler:
+      with profile(activities=activities, record_shapes=True, profile_memory=True, with_flops=True) as prof:
+        t0 = time.time()
+        outputs = model(**batch, use_cache=True)
+        t1 = time.time()
+      if trace_path is not None:
+        prof.export_chrome_trace(trace_path)
+        print(prof.key_averages().table(sort_by="self_cuda_time_total" if torch.cuda.is_available() else "self_cpu_time_total", row_limit=-1))
+        print(prof.key_averages().table(sort_by="flops", row_limit=10))
+        print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=10))
+    else:
+      t0 = time.time()
+      outputs = model(**batch, use_cache=True)
+      t1 = time.time()
+
+  _, peak_cpu_bytes = tracemalloc.get_traced_memory()
+  tracemalloc.stop()
+
+  peak_gpu_gb = 0.0
+  if torch.cuda.is_available():
+    peak_bytes = torch.cuda.max_memory_allocated()
+    peak_gpu_gb = round(peak_bytes / (1024 ** 3), 3)
+    torch.cuda.reset_peak_memory_stats()
+
+  return outputs, (t1 - t0), peak_gpu_gb, round(peak_cpu_bytes / (1024 ** 2), 3)
+
+
+def profile_decode_with_past(
+  model: transformers.models,
+  batch,
+  past_key_values,
+  decode_steps: int,
+  use_profiler: bool = True,
+  trace_path: str | None = None,
+):
+  """
+  Decode = iterative steps using past_key_values.
+  Returns (generated_tokens, timing_s, cuda_peak_gb, cpu_peak_mb)
+  """
+  model.eval()
+  device = _infer_model_device(model)
+  batch = safe_move_batch_to_device(batch, device)
+
+  input_ids = batch["input_ids"]
+  next_token = input_ids[:, -1:].contiguous()
+
+  pkv = past_key_values
+  generated = []
+
+  activities = (
+    [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+    if (use_profiler and torch.cuda.is_available())
+    else ([ProfilerActivity.CPU] if use_profiler else [])
+  )
+
+  import tracemalloc
+  tracemalloc.start()
+  if torch.cuda.is_available():
+    torch.cuda.reset_peak_memory_stats()
+
+  with torch.no_grad():
+    if use_profiler:
+      with profile(activities=activities, record_shapes=True, profile_memory=True) as prof:
+        t0 = time.time()
+        for _ in range(decode_steps):
+          outputs = model(
+            input_ids=next_token,
+            past_key_values=pkv,
+            use_cache=True,
+          )
+          logits = outputs.logits
+          pkv = outputs.past_key_values
+          next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+          generated.append(next_token)
+        t1 = time.time()
+      if trace_path is not None:
+        prof.export_chrome_trace(trace_path)
+    else:
+      t0 = time.time()
+      for _ in range(decode_steps):
+        outputs = model(
+          input_ids=next_token,
+          past_key_values=pkv,
+          use_cache=True,
+        )
+        logits = outputs.logits
+        pkv = outputs.past_key_values
+        next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+        generated.append(next_token)
+      t1 = time.time()
+
+  _, peak_cpu_bytes = tracemalloc.get_traced_memory()
+  tracemalloc.stop()
+
+  peak_gpu_gb = 0.0
+  if torch.cuda.is_available():
+    peak_bytes = torch.cuda.max_memory_allocated()
+    peak_gpu_gb = round(peak_bytes / (1024 ** 3), 3)
+    torch.cuda.reset_peak_memory_stats()
+
+  return generated, (t1 - t0), peak_gpu_gb, round(peak_cpu_bytes / (1024 ** 2), 3)
+
+
+def profile_prefill_decode(
+  model: transformers.models,
+  batch,
+  decode_steps: int,
+  traces_dir: str | None = None,
+  trace_prefix: str | None = None,
+):
+  """
+  Profile prefill and decode phases and return a flat dict of results.
+  """
+  traces_dir = traces_dir or "."
+  Path(traces_dir).mkdir(parents=True, exist_ok=True)
+  trace_prefix = trace_prefix or "trace"
+
+  prefill_trace = str(Path(traces_dir) / f"{trace_prefix}_prefill.json")
+  decode_trace = str(Path(traces_dir) / f"{trace_prefix}_decode.json")
+
+  prefill_out, prefill_s, prefill_peak_gb, prefill_cpu_peak_mb = profile_prefill(
+    model,
+    batch,
+    use_profiler=True,
+    trace_path=prefill_trace,
+  )
+  past = prefill_out.past_key_values
+
+  _, decode_s, decode_peak_gb, decode_cpu_peak_mb = profile_decode_with_past(
+    model,
+    batch,
+    past_key_values=past,
+    decode_steps=decode_steps,
+    use_profiler=True,
+    trace_path=decode_trace,
+  )
+
+  return {
+    "prefill_s": prefill_s,
+    "decode_s": decode_s,
+    "prefill_peak_gpu_gb": prefill_peak_gb,
+    "decode_peak_gpu_gb": decode_peak_gb,
+    "prefill_cpu_peak_mb": prefill_cpu_peak_mb,
+    "decode_cpu_peak_mb": decode_cpu_peak_mb,
+  }
+
 
 def model_profiler(model: transformers.models,
                   example,
